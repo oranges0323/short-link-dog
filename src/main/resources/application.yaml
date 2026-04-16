@@ -1,0 +1,33 @@
+server:
+  port: 8126
+  servlet:
+    context-path: /linkapi
+spring:
+  application:
+    name: short-link-dog
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/short_link_dog
+    username: root
+    password: root
+  ##  激活读取配置(可以直接在运行配置开）
+  #  profiles:
+  #    active: local
+  # Redis 配置
+  redis:
+    database: 1
+    host: 127.0.0.1
+    port: 6379
+    timeout: 5000
+
+# 接口文档配置
+knife4j:
+  enable: true
+  openapi:
+    title: "短链狗接口文档"
+    version: 1.0
+    group:
+      default:
+        api-rule: package
+        api-rule-resources:
+          - com.oranges.shortlinkdog.controller
