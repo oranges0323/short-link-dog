@@ -19,7 +19,9 @@ spring:
     host: 127.0.0.1
     port: 6379
     timeout: 5000
-
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false  # 关闭驼峰转换
 # 接口文档配置
 knife4j:
   enable: true
