@@ -18,7 +18,6 @@ public interface ShortLinkService extends IService<ShortLink> {
 
     /**
      * 根据短链接获取长链接
-     * @param shortLink
      * @return
      */
     String getLongLinkByShortLink(String shortUrl);
