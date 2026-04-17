@@ -3,20 +3,28 @@ package com.oranges.shortlinkdog.model.dto;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+
+import java.io.Serializable;
 import java.util.Date;
+
 import lombok.Data;
 
 /**
  * 短链接映射表
+ *
  * @TableName short_link
  */
-@TableName(value ="short_link")
+@TableName(value = "short_link")
 @Data
-public class ShortLink {
+public class ShortLink implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     /**
      * 主键ID
      */
     @TableId(type = IdType.AUTO)
+    //雪花算法生成id
+//    @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
     /**

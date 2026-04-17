@@ -9,5 +9,18 @@ import com.baomidou.mybatisplus.extension.service.IService;
 * @createDate 2026-04-16 17:00:10
 */
 public interface ShortLinkService extends IService<ShortLink> {
+    /**
+     * 根据url创建短链接
+     * @param Url
+     * @return
+     */
+    String createShortLinkByUrl(String Url);
+
+    /**
+     * 根据短链接获取长链接
+     * @param shortLink
+     * @return
+     */
+    String getLongLinkByShortLink(String shortUrl);
 
 }
