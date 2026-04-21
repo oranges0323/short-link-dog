@@ -96,11 +96,13 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
             return short_code;
         } catch (DuplicateKeyException e) {
-            //已经存在直接返回
+            //已经存在直接返回,(更新过期时间)
             ShortLink selectOne = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("long_url_md5", long_url_MD5));
             if(selectOne != null && selectOne.getShort_code() != null){
+                //更新过期时间
+                selectOne.setExpire_time(DateUtil.offsetDay(DateUtil.date(), 7));
+                boolean update = this.updateById(selectOne);
                 return selectOne.getShort_code();
-
             }
             throw new BusinessException(ErrorCode.SYSTEM_ERROR,"系统错误");
         }
@@ -127,28 +129,33 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         Object o = redisTemplate.opsForValue().get(shortCode);
         if(o != null){
             BeanUtil.copyProperties(o,shortLink);
-            //检查是否过期
-            if(shortLink.getExpire_time().before(DateUtil.date())){
-                throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期");
-            }
+//            //检查是否过期(不用了，和redis过期时间同步了)
+//            if(shortLink.getExpire_time().before(DateUtil.date())){
+//                throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期,请重新创建");
+//            }
             return shortLink.getLong_url();
         }
         //查数据库
          shortLink = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("short_code", shortCode));
         /**
-         * todo
-         *  加一个过期判断，过期提示重新创建（只要更新过期时间就行）
+         *  过期判断，过期提示重新创建（只要更新过期时间就行）
          */
         if(shortLink == null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR,"短链接不存在");
         }
 
         //检查是否过期
-        if(shortLink.getExpire_time().before(DateUtil.date())){
-            throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期");
+        if(shortLink.getExpire_time() != null && shortLink.getExpire_time().before(DateUtil.date())){
+            throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期,请重新创建");
         }
-        //存redis
-        redisTemplate.opsForValue().set(shortCode,shortLink, 7, TimeUnit.DAYS);
+
+        //存redis,这里的过期时间要和数据库的过期时间同步
+        //获取过期时间（没有过期时间默认60天）
+        long timeRemaining = 60L * 24 * 60 * 60 * 1000;
+        if(shortLink.getExpire_time() != null){
+            timeRemaining = shortLink.getExpire_time().getTime() - DateUtil.date().getTime();
+        }
+        redisTemplate.opsForValue().set(shortCode,shortLink, timeRemaining, TimeUnit.MILLISECONDS);
 
 
         return shortLink.getLong_url();
