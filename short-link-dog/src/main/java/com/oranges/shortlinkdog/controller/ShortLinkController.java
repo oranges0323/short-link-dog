@@ -37,7 +37,7 @@ public class ShortLinkController {
     /**
      * 访问短链接
      */
-    @GetMapping("/visit/{shortLink}")
+    @GetMapping("/v/{shortLink}")
     public void visit(@PathVariable("shortLink") String shortLink, HttpServletResponse response) throws IOException {
 
         String longLink = shortLinkService.getLongLinkByShortLink(shortLink);
