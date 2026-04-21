@@ -1,5 +1,6 @@
 package com.oranges.shortlinkdog.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.date.DateUtil;
 import cn.hutool.crypto.digest.MD5;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -17,7 +18,6 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
-import java.io.Serializable;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.concurrent.TimeUnit;
@@ -39,7 +39,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     @Resource
     private ShortLinkMapper shortLinkMapper;
     @Resource
-    private RedisTemplate redisTemplate;
+    private RedisTemplate<String , Object> redisTemplate;
 
     @Override
     public String createShortLinkByUrl(String url) {
@@ -123,25 +123,30 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
         ShortLink shortLink = new ShortLink();
 
-//        //查redis
-//        Object o = redisTemplate.opsForValue().get(shortCode);
-//        if(o != null){
-//            BeanUtil.copyProperties(o,shortLink);
-//            return shortLink.getLong_url();
-//        }
+        //查redis
+        Object o = redisTemplate.opsForValue().get(shortCode);
+        if(o != null){
+            BeanUtil.copyProperties(o,shortLink);
+            //检查是否过期
+            if(shortLink.getExpire_time().before(DateUtil.date())){
+                throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期");
+            }
+            return shortLink.getLong_url();
+        }
         //查数据库
          shortLink = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("short_code", shortCode));
+        /**
+         * todo
+         *  加一个过期判断，过期提示重新创建（只要更新过期时间就行）
+         */
         if(shortLink == null){
             throw new BusinessException(ErrorCode.PARAMS_ERROR,"短链接不存在");
         }
-        /**
-         * todo
-         *  redis有问题
-         */
-//        //检查是否过期（先不管）
-//        if(shortLink.getExpire_time().before(DateUtil.date())){
-//            throw new BusinessException(ErrorCode.PARAMS_ERROR,"短链接已过期");
-//        }
+
+        //检查是否过期
+        if(shortLink.getExpire_time().before(DateUtil.date())){
+            throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期");
+        }
         //存redis
         redisTemplate.opsForValue().set(shortCode,shortLink, 7, TimeUnit.DAYS);
 
