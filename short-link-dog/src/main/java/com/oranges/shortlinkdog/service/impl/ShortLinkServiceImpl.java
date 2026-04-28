@@ -6,6 +6,7 @@ import cn.hutool.crypto.digest.MD5;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.google.common.hash.BloomFilter;
 import com.oranges.shortlinkdog.exception.BusinessException;
 import com.oranges.shortlinkdog.exception.ErrorCode;
 import com.oranges.shortlinkdog.exception.ThrowUtils;
@@ -23,14 +24,14 @@ import java.net.URL;
 import java.util.concurrent.TimeUnit;
 
 /**
-* @author chen zhi
-* @description 针对表【short_link(短链接映射表)】的数据库操作Service实现
-* @createDate 2026-04-16 17:00:10
-*/
+ * @author chen zhi
+ * @description 针对表【short_link(短链接映射表)】的数据库操作Service实现
+ * @createDate 2026-04-16 17:00:10
+ */
 @Service
 @Slf4j
 public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink>
-    implements ShortLinkService, IService<ShortLink> {
+        implements ShortLinkService, IService<ShortLink> {
 
 
     private static final String BASE62_CHARS =
@@ -39,7 +40,9 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
     @Resource
     private ShortLinkMapper shortLinkMapper;
     @Resource
-    private RedisTemplate<String , Object> redisTemplate;
+    private RedisTemplate<String, Object> redisTemplate;
+    @Resource
+    private BloomFilter<String> bloomFilter;
 
     @Override
     public String createShortLinkByUrl(String url) {
@@ -61,18 +64,18 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
         try {
             URL newurl = new URL(url);
             //校验协议
-            if(newurl.getProtocol() == null || newurl.getProtocol().isEmpty()){
-                throw new BusinessException(ErrorCode.PARAMS_ERROR,"协议非法的url");
+            if (newurl.getProtocol() == null || newurl.getProtocol().isEmpty()) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "协议非法的url");
 
             }
-            if(!newurl.getProtocol().equals("http") && !newurl.getProtocol().equals("https")){
-                throw new BusinessException(ErrorCode.PARAMS_ERROR,"协议非法的url");
+            if (!newurl.getProtocol().equals("http") && !newurl.getProtocol().equals("https")) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "协议非法的url");
             }
-            if(newurl.getHost() == null || newurl.getHost().isEmpty()){
-                throw new BusinessException(ErrorCode.PARAMS_ERROR,"host非法的url");
+            if (newurl.getHost() == null || newurl.getHost().isEmpty()) {
+                throw new BusinessException(ErrorCode.PARAMS_ERROR, "host非法的url");
             }
         } catch (MalformedURLException e) {
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"非法的url");
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "非法的url");
         }
         String long_url_MD5 = MD5.create().digestHex(url);
 
@@ -87,24 +90,25 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
         try {
             //成功则生成短码
-
             this.save(shortLink);
+
             String short_code = encodeBase62(shortLink.getId());
             shortLink.setShort_code(short_code);
             boolean update = this.updateById(shortLink);
-            ThrowUtils.throwIf(!update, ErrorCode.SYSTEM_ERROR,"系统错误");
-
+            ThrowUtils.throwIf(!update, ErrorCode.SYSTEM_ERROR, "数据库系统错误");
+            //存布隆过滤器（过期不影响，布隆只是排除肯定没有的）
+            bloomFilter.put(short_code);
             return short_code;
         } catch (DuplicateKeyException e) {
-            //已经存在直接返回,(更新过期时间)
+            //已经存在直接返回(更新过期时间)
             ShortLink selectOne = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("long_url_md5", long_url_MD5));
-            if(selectOne != null && selectOne.getShort_code() != null){
+            if (selectOne != null && selectOne.getShort_code() != null) {
                 //更新过期时间
                 selectOne.setExpire_time(DateUtil.offsetDay(DateUtil.date(), 7));
                 boolean update = this.updateById(selectOne);
                 return selectOne.getShort_code();
             }
-            throw new BusinessException(ErrorCode.SYSTEM_ERROR,"系统错误");
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "数据库系统错误");
         }
 
     }
@@ -117,45 +121,45 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
          *  1.校验
          *  2.获取长链接 分两步，查询redis，没有在查数据库（如果在数据库查到就存一下redis）
          *  3.返回
+         *  4.4.28新增布隆过滤器，先布隆拦截
          */
-        if(shortCode == null||shortCode.isEmpty()){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"短码为空");
+        if (shortCode == null || shortCode.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "短码为空");
+        }
+        // 如果布隆过滤器判断短码不存在，则直接抛出业务异常
+        // 这里使用mightContain方法进行快速判断，可能会有误判（存在误判但不会漏判）
+        if(!bloomFilter.mightContain(shortCode)){
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "短码不存在");
         }
 
-
         ShortLink shortLink = new ShortLink();
-
-        //查redis
+        //查redis（不用检查过期，因为redis过期和db里面过期时间的同步了）
         Object o = redisTemplate.opsForValue().get(shortCode);
-        if(o != null){
-            BeanUtil.copyProperties(o,shortLink);
-//            //检查是否过期(不用了，和redis过期时间同步了)
-//            if(shortLink.getExpire_time().before(DateUtil.date())){
-//                throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期,请重新创建");
-//            }
+        if (o != null) {
+            BeanUtil.copyProperties(o, shortLink);
             return shortLink.getLong_url();
         }
         //查数据库
-         shortLink = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("short_code", shortCode));
+        shortLink = shortLinkMapper.selectOne(new QueryWrapper<ShortLink>().eq("short_code", shortCode));
         /**
          *  过期判断，过期提示重新创建（只要更新过期时间就行）
          */
-        if(shortLink == null){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"短链接不存在");
+        if (shortLink == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "短链接不存在");
         }
 
         //检查是否过期
-        if(shortLink.getExpire_time() != null && shortLink.getExpire_time().before(DateUtil.date())){
-            throw new BusinessException(ErrorCode.EXPIRY_ERROR,"短链接已过期,请重新创建");
+        if (shortLink.getExpire_time() != null && shortLink.getExpire_time().before(DateUtil.date())) {
+            throw new BusinessException(ErrorCode.EXPIRY_ERROR, "短链接已过期,请重新创建");
         }
 
         //存redis,这里的过期时间要和数据库的过期时间同步
         //获取过期时间（没有过期时间默认60天）
         long timeRemaining = 60L * 24 * 60 * 60 * 1000;
-        if(shortLink.getExpire_time() != null){
+        if (shortLink.getExpire_time() != null) {
             timeRemaining = shortLink.getExpire_time().getTime() - DateUtil.date().getTime();
         }
-        redisTemplate.opsForValue().set(shortCode,shortLink, timeRemaining, TimeUnit.MILLISECONDS);
+        redisTemplate.opsForValue().set(shortCode, shortLink, timeRemaining, TimeUnit.MILLISECONDS);
 
 
         return shortLink.getLong_url();
@@ -163,6 +167,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
     /**
      * 自定义转62进制
+     *
      * @param num
      * @return
      */
@@ -171,7 +176,7 @@ public class ShortLinkServiceImpl extends ServiceImpl<ShortLinkMapper, ShortLink
 
         StringBuilder sb = new StringBuilder();
         while (num > 0) {
-            sb.append(BASE62_CHARS.charAt((int)(num % 62)));
+            sb.append(BASE62_CHARS.charAt((int) (num % 62)));
             num /= 62;
         }
         return sb.reverse().toString();

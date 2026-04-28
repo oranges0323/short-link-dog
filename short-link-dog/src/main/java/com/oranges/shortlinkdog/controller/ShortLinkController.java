@@ -21,19 +21,21 @@ public class ShortLinkController {
 
     /**
      * 生成短链接
+     *
      * @param url
      * @return
      */
     @PostMapping("/create")
     public BaseResponse<String> create(String url) {
         //校验url是否为空
-        if(url==null || url.isEmpty()){
-            throw new BusinessException(ErrorCode.PARAMS_ERROR,"url不能为空");
+        if (url == null || url.isEmpty()) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "url不能为空");
         }
         String shortCode = shortLinkService.createShortLinkByUrl(url);
-        String shortLink = "http://localhost:8126/linkapi/visit/"+shortCode;
+        String shortLink = "http://localhost:8126/linkapi/v/" + shortCode;
         return ResultUtils.success(shortLink);
     }
+
     /**
      * 访问短链接
      */
@@ -41,7 +43,7 @@ public class ShortLinkController {
     public void visit(@PathVariable("shortLink") String shortLink, HttpServletResponse response) throws IOException {
 
         String longLink = shortLinkService.getLongLinkByShortLink(shortLink);
-        log.info("重定向到：{}",longLink);
+        log.info("重定向到：{}", longLink);
         response.sendRedirect(longLink);
     }
 
