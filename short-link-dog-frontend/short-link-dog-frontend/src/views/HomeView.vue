@@ -6,7 +6,15 @@ const inputUrl = ref('')
 const loading = ref(false)
 const errorMessage = ref('')
 const shortUrl = ref('')
+const copyMessage = ref('')
 const showLogo = ref(true)
+
+const showCopyMessage = (message: string) => {
+  copyMessage.value = message
+  window.setTimeout(() => {
+    copyMessage.value = ''
+  }, 1800)
+}
 
 const createShortLinkHandler = async () => {
   errorMessage.value = ''
@@ -28,8 +36,16 @@ const createShortLinkHandler = async () => {
 }
 
 const copyShortUrl = async () => {
-  if (!shortUrl.value) return
-  await navigator.clipboard.writeText(shortUrl.value)
+  if (!shortUrl.value) {
+    showCopyMessage('当前没有可复制的短链接')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(shortUrl.value)
+    showCopyMessage('复制成功')
+  } catch {
+    showCopyMessage('复制失败，请手动复制')
+  }
 }
 
 const openShortUrl = () => {
@@ -75,6 +91,7 @@ const openShortUrl = () => {
           <button class="btn" @click="copyShortUrl">复制</button>
           <button class="btn" @click="openShortUrl">打开</button>
         </div>
+        <p v-if="copyMessage" class="tip">{{ copyMessage }}</p>
       </div>
     </section>
   </main>
@@ -194,5 +211,11 @@ h1 {
 
 .actions {
   margin-top: 10px;
+}
+
+.tip {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #2563eb;
 }
 </style>
